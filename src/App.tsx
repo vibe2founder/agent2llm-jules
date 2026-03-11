@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { loadHistory, saveHistory } from "./history";
 import type { Message } from "./history";
 import { processUserPrompt } from "./agent";
+import { handleSlashCommand } from "./commands";
+import { registerMcpServer, getMcpTools } from "./mcp";
 
 export default function App() {
   const [history, setHistory] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState("");
+  const { exit } = useApp();
 
   // Carregar histórico ao iniciar
   useEffect(() => {
@@ -18,27 +21,57 @@ export default function App() {
       setHistory(loaded);
     } else {
       setHistory([
-        { role: "assistant", content: "Olá! Sou o Agent2LLM. Como posso te ajudar a programar hoje?" }
+        { role: "assistant", content: "Olá! Sou o Agent2LLM. Digite /help para ver meus comandos." }
       ]);
     }
   }, []);
 
+  const addMcpServer = async (commandStr: string) => {
+    try {
+      const serverConfig = commandStr.split(" ");
+      const serverName = serverConfig[0] || "mcp_server";
+      await registerMcpServer(serverName, serverConfig[0]!, serverConfig.slice(1));
+      setStatus("MCP server configurado.");
+      setTimeout(() => setStatus(""), 2000);
+
+      const mcpMsg: Message = { role: "system", content: `Servidor MCP ${serverName} iniciado.` };
+      setHistory(prev => [...prev, mcpMsg]);
+    } catch (err) {
+      const errMsg: Message = { role: "system", content: `Falha MCP: ${(err as Error).message}` };
+      setHistory(prev => [...prev, errMsg]);
+    }
+  };
+
   const handleSubmit = async (value: string) => {
     if (!value.trim()) return;
+
+    setInput("");
+
+    const isCommand = await handleSlashCommand(value, {
+      history,
+      setHistory,
+      setStatus,
+      exitApp: exit,
+      addMcpServer
+    });
+
+    if (isCommand) return;
 
     // Atualizar UI com mensagem do usuário
     const userMsg: Message = { role: "user", content: value };
     const newHistory = [...history, userMsg];
     setHistory(newHistory);
-    setInput("");
     setIsProcessing(true);
     setStatus("Pensando...");
 
-    // Enviar para o agente, passando o contexto antigo (limitado aos últimos 10 turnos)
-    const recentHistory = newHistory.slice(-10);
+    // Remove msgs internas (system) pra mandar pro LLM
+    const promptHistory = newHistory.filter(h => h.role !== "system").slice(-10);
 
     try {
-      const response = await processUserPrompt(value, recentHistory, (msg) => {
+      // Injeta ferramentas MCP se existirem
+      const mcpTools = await getMcpTools();
+
+      const response = await processUserPrompt(value, promptHistory, mcpTools, (msg) => {
         setStatus(msg);
       });
 
@@ -46,17 +79,21 @@ export default function App() {
       const finalHistory = [...newHistory, assistantMsg];
 
       setHistory(finalHistory);
-      saveHistory(finalHistory);
+      // Salva em disco só o q importa pro LLM
+      saveHistory(finalHistory.filter(h => h.role !== "system"));
     } catch (error) {
       const errorMsg: Message = { role: "assistant", content: `Erro: ${(error as Error).message}` };
       const finalHistory = [...newHistory, errorMsg];
       setHistory(finalHistory);
-      saveHistory(finalHistory);
+      saveHistory(finalHistory.filter(h => h.role !== "system"));
     } finally {
       setIsProcessing(false);
       setStatus("");
     }
   };
+
+  // Ajuda UI Slash /
+  const showCommandsHint = input.startsWith("/");
 
   return (
     <Box flexDirection="column" padding={1} width="100%">
@@ -68,10 +105,13 @@ export default function App() {
       <Box flexDirection="column" marginBottom={1}>
         {history.map((msg, index) => {
           const isUser = msg.role === "user";
+          const isSystem = msg.role === "system";
+          const color = isUser ? "green" : (isSystem ? "blue" : "magenta");
+          const label = isUser ? "Você:" : (isSystem ? "Sistema:" : "Agente:");
           return (
             <Box key={index} flexDirection="column" marginBottom={1}>
-              <Text bold color={isUser ? "green" : "magenta"}>
-                {isUser ? "Você:" : "Agente:"}
+              <Text bold color={color}>
+                {label}
               </Text>
               <Text>{msg.content}</Text>
             </Box>
@@ -86,9 +126,16 @@ export default function App() {
         </Box>
       )}
 
+      {/* Hint Comandos */}
+      {showCommandsHint && !isProcessing && (
+        <Box marginBottom={1} borderStyle="single" borderColor="blue" padding={1}>
+          <Text color="blue">Comandos rápidos: /help, /clear, /mcp, /exit</Text>
+        </Box>
+      )}
+
       {/* Entrada de Texto */}
-      <Box borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text color="green" bold>❯ </Text>
+      <Box borderStyle="single" borderColor={showCommandsHint ? "blue" : "gray"} paddingX={1}>
+        <Text color="green" bold>{showCommandsHint ? "⚡" : "❯"} </Text>
         {isProcessing ? (
           <Text color="gray">Aguarde a resposta...</Text>
         ) : (
@@ -97,7 +144,7 @@ export default function App() {
             onChange={setInput}
             onSubmit={handleSubmit}
             // @ts-ignore
-            placeholder="Digite seu comando aqui..."
+            placeholder={showCommandsHint ? "Digite o comando..." : "Digite seu comando aqui..."}
           />
         )}
       </Box>

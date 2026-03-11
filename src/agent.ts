@@ -1,5 +1,5 @@
 import { createSecureFileTools, runToolCallingAgent } from "@purecore/one-llm-4-all";
-import type { LLMProviderSelection, ToolCallingAgentOptions } from "@purecore/one-llm-4-all";
+import type { LLMProviderSelection, AgentTool } from "@purecore/one-llm-4-all";
 import dotenv from "dotenv";
 import type { Message } from "./history";
 
@@ -16,7 +16,7 @@ const SYSTEM_PROMPT = `Você é Agent2LLM, um assistente de programação experi
 Seu objetivo é ajudar o usuário a desenvolver software, entender o código, criar arquivos, fazer refatorações e debug.
 
 Diretrizes:
-1. Você tem acesso a ferramentas (tools) para ler, escrever, listar, excluir arquivos no diretório de trabalho atual.
+1. Você tem acesso a ferramentas (tools) para ler, escrever, listar, excluir arquivos no diretório de trabalho atual e comandos adicionais do MCP.
 2. Use essas ferramentas de forma autônoma para resolver o que o usuário pedir.
 3. Se um usuário pedir para criar ou alterar um arquivo, USE A FERRAMENTA DE ARQUIVO. Não diga apenas o que deve ser feito, faça você mesmo.
 4. Depois de usar uma ferramenta, sempre relate o que você fez de forma concisa.
@@ -27,6 +27,7 @@ Diretrizes:
 export async function processUserPrompt(
   prompt: string,
   history: Message[],
+  mcpTools: AgentTool[] = [],
   onProgress?: (msg: string) => void
 ): Promise<string> {
   const model = process.env.MODEL || "llama-3.1-8b-instant";
@@ -35,8 +36,6 @@ export async function processUserPrompt(
   try {
     if (onProgress) onProgress("Iniciando raciocínio...");
 
-    // Como o `runToolCallingAgent` atualmente só recebe `userPrompt` como string
-    // e não o array de messages histórico, vamos construir o histórico dentro do userPrompt para manter contexto.
     let fullPrompt = "";
     if (history.length > 0) {
       fullPrompt += "CONVERSA ANTERIOR:\n";
@@ -47,11 +46,14 @@ export async function processUserPrompt(
     }
     fullPrompt += prompt;
 
+    // Combina ferramentas de arquivo nativas com as importadas via MCP
+    const combinedTools = [...tools, ...mcpTools];
+
     const response = await runToolCallingAgent(fullPrompt, {
       model,
       provider,
       apiKey: process.env.API_KEY || process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY,
-      tools,
+      tools: combinedTools,
       maxSteps: 15,
       systemPrompt: SYSTEM_PROMPT,
     });
@@ -59,6 +61,10 @@ export async function processUserPrompt(
     return response;
   } catch (error) {
     console.error("Erro no agente:", error);
-    return `Ocorreu um erro: ${(error as Error).message}`;
+    const errMessage = (error as Error).message;
+    if (errMessage.includes("429")) {
+      return "⚠️ Ops! Atingimos o limite de taxa (Rate Limit 429) da API. Por favor, aguarde alguns instantes antes de tentar novamente, ou mude o provedor.";
+    }
+    return `Ocorreu um erro: ${errMessage}`;
   }
 }
