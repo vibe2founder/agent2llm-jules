@@ -1,8 +1,14 @@
 {
-  "name": "/app",
+  "name": "agent2llm-jules",
+  "workspaces": [
+    "packages/*"
+  ],
   "main": "src/index.tsx",
   "scripts": {
-    "start": "bun run src/index.tsx"
+    "start": "bun run src/index.tsx",
+    "dev": "bun run --watch src/index.tsx",
+    "build": "bun build src/index.tsx --outdir=./dist --target=node",
+    "test": "bun test ./tests/"
   },
   "type": "module",
   "private": true,
@@ -14,11 +20,12 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@purecore/one-llm-4-all": "github:vibe2founder/llm2router",
+    "@purecore/one-llm-4-all": "workspace:*",
     "dotenv": "^17.3.1",
     "ink": "^6.8.0",
     "ink-text-input": "^6.0.0",
     "react": "^19.2.4",
+    "react-devtools-core": "^7.0.1",
     "zod": "^4.3.6"
   }
 }
