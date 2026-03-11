@@ -1,0 +1,24 @@
+{
+  "name": "/app",
+  "main": "src/index.tsx",
+  "scripts": {
+    "start": "bun run src/index.tsx"
+  },
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@purecore/one-llm-4-all": "github:vibe2founder/llm2router",
+    "dotenv": "^17.3.1",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.4",
+    "zod": "^4.3.6"
+  }
+}
