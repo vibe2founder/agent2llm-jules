@@ -1,0 +1,3 @@
+[test]
+# run only tests in this directory and ignore subpackages workspaces
+coverageDir = "./coverage"
