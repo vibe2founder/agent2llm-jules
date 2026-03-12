@@ -65,7 +65,7 @@ export default function App() {
     setStatus("Pensando...");
 
     // Remove msgs internas (system) pra mandar pro LLM
-    const promptHistory = newHistory.filter(h => h.role !== "system").slice(-10);
+    const promptHistory = history.filter(h => h.role !== "system").slice(-10);
 
     try {
       // Injeta ferramentas MCP se existirem
